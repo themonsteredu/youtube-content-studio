@@ -3,29 +3,128 @@ import { z } from "zod";
 import { assertAdminApi, authErrorResponse } from "@/lib/auth-api";
 
 export const runtime = "nodejs";
+export const maxDuration = 60;
 
-const input = z.object({ title: z.string().min(2).max(60), subtitle: z.string().max(80), episode: z.string().max(20), imageUrl: z.string(), accent: z.string() });
+const input = z.object({
+  title: z.string().min(2).max(60),
+  subtitle: z.string().max(80),
+  episode: z.string().max(20),
+  imageUrl: z.string(),
+  template: z.enum(["bold", "documentary", "clean"]).default("bold"),
+  accent: z.string().default("#f2c94c"),
+  textColor: z.string().default("#ffffff"),
+  fontStyle: z.enum(["strong", "rounded", "serif", "modern"]).default("strong"),
+  titleSize: z.number().min(56).max(132).default(104),
+  subtitleSize: z.number().min(20).max(52).default(34),
+  frameStyle: z.enum(["none", "solid", "double", "corners"]).default("corners"),
+  frameColor: z.string().default("#ffffff"),
+  frameWidth: z.number().min(2).max(18).default(8),
+  frameInset: z.number().min(20).max(100).default(48),
+  decoration: z.enum(["none", "underline", "side", "dots", "circle"]).default("underline"),
+  overlayOpacity: z.number().min(0.15).max(0.95).default(0.7),
+  imageZoom: z.number().min(1).max(1.3).default(1.04),
+});
+
+type ThumbnailInput = z.infer<typeof input>;
+
+const fontFiles: Record<ThumbnailInput["fontStyle"], string> = {
+  strong: "NotoSansKR-900.ttf",
+  rounded: "NotoSansKR-700.ttf",
+  serif: "NotoSerifKR-800.ttf",
+  modern: "NotoSansKR-500.ttf",
+};
+
+const fontWeights: Record<ThumbnailInput["fontStyle"], 500 | 700 | 800 | 900> = {
+  strong: 900,
+  rounded: 700,
+  serif: 800,
+  modern: 500,
+};
+
+const fontCache = new Map<string, Promise<ArrayBuffer>>();
+
+function loadFont(request: Request, style: ThumbnailInput["fontStyle"]) {
+  const url = new URL(`/fonts/${fontFiles[style]}`, request.url).toString();
+  const cached = fontCache.get(url);
+  if (cached) return cached;
+  const pending = fetch(url, { cache: "force-cache" }).then((response) => {
+    if (!response.ok) throw new Error("THUMBNAIL_FONT_LOAD_FAILED");
+    return response.arrayBuffer();
+  });
+  fontCache.set(url, pending);
+  return pending;
+}
+
+function ThumbnailFrame({ draft }: { draft: ThumbnailInput }) {
+  if (draft.frameStyle === "none") return null;
+  const common = { position: "absolute" as const, zIndex: 3, top: draft.frameInset, right: draft.frameInset, bottom: draft.frameInset, left: draft.frameInset, display: "flex" };
+  if (draft.frameStyle !== "corners") {
+    return <div style={{ ...common, border: `${draft.frameWidth}px ${draft.frameStyle === "double" ? "double" : "solid"} ${draft.frameColor}` }} />;
+  }
+  const size = 180;
+  const corner = { position: "absolute" as const, display: "flex", width: size, height: size, borderColor: draft.frameColor, borderStyle: "solid", borderWidth: draft.frameWidth };
+  return (
+    <div style={{ ...common, borderColor: draft.frameColor }}>
+      <div style={{ ...corner, left: 0, top: 0, borderRightWidth: 0, borderBottomWidth: 0 }} />
+      <div style={{ ...corner, right: 0, top: 0, borderLeftWidth: 0, borderBottomWidth: 0 }} />
+      <div style={{ ...corner, left: 0, bottom: 0, borderRightWidth: 0, borderTopWidth: 0 }} />
+      <div style={{ ...corner, right: 0, bottom: 0, borderLeftWidth: 0, borderTopWidth: 0 }} />
+    </div>
+  );
+}
+
+function ThumbnailDecoration({ draft }: { draft: ThumbnailInput }) {
+  if (draft.decoration === "none" || draft.decoration === "underline") return null;
+  if (draft.decoration === "side") return <div style={{ position: "absolute", zIndex: 2, left: 72, top: 280, width: 14, height: 450, display: "flex", background: draft.accent }} />;
+  if (draft.decoration === "circle") return <div style={{ position: "absolute", zIndex: 2, right: -80, top: 80, width: 520, height: 520, display: "flex", border: `11px solid ${draft.accent}`, borderRadius: "50%", opacity: 0.72 }} />;
+  return (
+    <div style={{ position: "absolute", zIndex: 2, right: 120, top: 100, display: "flex", gap: 16 }}>
+      {[0, 1, 2].map((item) => <div key={item} style={{ width: 22, height: 22, display: "flex", borderRadius: "50%", background: draft.accent }} />)}
+    </div>
+  );
+}
 
 export async function POST(request: Request) {
-  let draft: z.infer<typeof input>;
+  let draft: ThumbnailInput;
   try {
     await assertAdminApi();
     draft = input.parse(await request.json());
-  } catch (error) { return authErrorResponse(error); }
+  } catch (error) {
+    if (error instanceof z.ZodError) return Response.json({ error: "썸네일 설정값을 확인하세요." }, { status: 400 });
+    return authErrorResponse(error);
+  }
 
   const imageUrl = draft.imageUrl.startsWith("/") ? new URL(draft.imageUrl, request.url).toString() : draft.imageUrl;
+  const fontData = await loadFont(request, draft.fontStyle);
+  const alpha = draft.overlayOpacity;
+  const overlay = draft.template === "documentary"
+    ? `linear-gradient(90deg, rgba(8,9,12,${alpha}) 0%, rgba(8,9,12,${alpha * 0.85}) 42%, rgba(8,9,12,0) 88%)`
+    : `linear-gradient(0deg, rgba(8,9,12,${alpha}) 0%, rgba(8,9,12,${alpha * 0.7}) 35%, rgba(8,9,12,0) 78%)`;
+  const copyPosition = draft.template === "documentary"
+    ? { left: 140, top: 180, bottom: 180, maxWidth: 1220, justifyContent: "center" as const }
+    : { left: 120, right: 120, bottom: 100, maxWidth: draft.template === "clean" ? 1400 : 1560, justifyContent: "flex-end" as const };
+
   return new ImageResponse(
-    <div style={{ display: "flex", width: "100%", height: "100%", position: "relative", backgroundColor: "#111", color: "white", fontFamily: "sans-serif" }}>
+    <div style={{ display: "flex", width: "100%", height: "100%", position: "relative", overflow: "hidden", backgroundColor: "#111", color: draft.textColor, fontFamily: "ThumbnailFont" }}>
       {/* ImageResponse renders HTML-compatible elements rather than next/image. */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={imageUrl} alt="" width="1920" height="1080" style={{ position: "absolute", width: "100%", height: "100%", objectFit: "cover" }} />
-      <div style={{ display: "flex", position: "absolute", inset: 0, background: "linear-gradient(0deg, rgba(0,0,0,.88), rgba(0,0,0,.08) 72%)" }} />
-      <div style={{ display: "flex", flexDirection: "column", position: "absolute", left: 110, right: 110, bottom: 100 }}>
+      <img src={imageUrl} alt="" width="1920" height="1080" style={{ position: "absolute", zIndex: 0, width: "100%", height: "100%", objectFit: "cover", transform: `scale(${draft.imageZoom})` }} />
+      <div style={{ display: "flex", position: "absolute", zIndex: 1, inset: 0, background: overlay }} />
+      <ThumbnailDecoration draft={draft} />
+      <ThumbnailFrame draft={draft} />
+      <div style={{ display: "flex", flexDirection: "column", position: "absolute", zIndex: 4, ...copyPosition }}>
         <div style={{ display: "flex", alignSelf: "flex-start", background: draft.accent, color: "#151515", padding: "10px 20px", fontSize: 30, fontWeight: 800 }}>{draft.episode || "NEW"}</div>
-        <div style={{ display: "flex", maxWidth: 1500, marginTop: 22, fontSize: 96, lineHeight: 1.05, fontWeight: 900 }}>{draft.title}</div>
-        <div style={{ display: "flex", marginTop: 20, fontSize: 34, color: "rgba(255,255,255,.82)" }}>{draft.subtitle}</div>
+        <div style={{ display: "flex", marginTop: 22, fontSize: draft.titleSize, lineHeight: draft.template === "documentary" ? 1.08 : 1.04, fontWeight: fontWeights[draft.fontStyle], wordBreak: "keep-all", textShadow: "0 5px 22px rgba(0,0,0,.38)" }}>{draft.title}</div>
+        {draft.decoration === "underline" && <div style={{ display: "flex", width: 320, height: 9, marginTop: 24, background: draft.accent }} />}
+        {draft.subtitle && <div style={{ display: "flex", marginTop: 20, fontSize: draft.subtitleSize, lineHeight: 1.25, fontWeight: 650, color: draft.textColor, opacity: 0.86, textShadow: "0 4px 16px rgba(0,0,0,.42)" }}>{draft.subtitle}</div>}
       </div>
     </div>,
-    { width: 1920, height: 1080 },
+    {
+      width: 1920,
+      height: 1080,
+      fonts: [
+        { name: "ThumbnailFont", data: fontData, weight: fontWeights[draft.fontStyle] },
+      ],
+    },
   );
 }

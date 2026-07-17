@@ -2,7 +2,9 @@ import { randomUUID } from "node:crypto";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import type { ContentDraft } from "@/types/studio";
 
-export async function submitRender(ownerId: string, draft: ContentDraft) {
+type RenderDraft = Pick<ContentDraft, "title" | "subtitle" | "episode" | "imageUrl" | "imageId" | "template" | "accent" | "duration">;
+
+export async function submitRender(ownerId: string, draft: RenderDraft) {
   const jobId = randomUUID();
   const supabase = await getSupabaseServer();
   if (supabase) {

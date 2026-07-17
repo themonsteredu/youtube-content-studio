@@ -2,12 +2,13 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Player } from "@remotion/player";
-import { Download, Film, Image as ImageIcon, LoaderCircle } from "lucide-react";
+import { Download, Film, Image as ImageIcon, LoaderCircle, Sparkles, Square, Type } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import { listLocalAssets, mergeAssets } from "@/lib/local-media";
 import { IntroComposition } from "@/remotion/intro-composition";
+import { ThumbnailPreview } from "@/components/thumbnail-preview";
 import type { ContentDraft, MediaAsset } from "@/types/studio";
 
 const schema = z.object({
@@ -18,8 +19,25 @@ const schema = z.object({
   imageId: z.string().optional(),
   template: z.enum(["bold", "documentary", "clean"]),
   accent: z.string(),
+  textColor: z.string(),
+  fontStyle: z.enum(["strong", "rounded", "serif", "modern"]),
+  titleSize: z.number().min(56).max(132),
+  subtitleSize: z.number().min(20).max(52),
+  frameStyle: z.enum(["none", "solid", "double", "corners"]),
+  frameColor: z.string(),
+  frameWidth: z.number().min(2).max(18),
+  frameInset: z.number().min(20).max(100),
+  decoration: z.enum(["none", "underline", "side", "dots", "circle"]),
+  overlayOpacity: z.number().min(0.15).max(0.95),
+  imageZoom: z.number().min(1).max(1.3),
   duration: z.number().min(3).max(12),
 });
+
+const templatePresets: Record<ContentDraft["template"], Partial<ContentDraft>> = {
+  bold: { fontStyle: "strong", titleSize: 104, subtitleSize: 34, frameStyle: "corners", frameWidth: 8, frameInset: 48, decoration: "underline", overlayOpacity: 0.7, imageZoom: 1.04 },
+  documentary: { fontStyle: "serif", titleSize: 92, subtitleSize: 32, frameStyle: "solid", frameWidth: 4, frameInset: 52, decoration: "side", overlayOpacity: 0.8, imageZoom: 1.08 },
+  clean: { fontStyle: "modern", titleSize: 82, subtitleSize: 28, frameStyle: "double", frameWidth: 7, frameInset: 38, decoration: "dots", overlayOpacity: 0.5, imageZoom: 1 },
+};
 
 export function GeneratorClient({ assets }: { assets: MediaAsset[] }) {
   const [availableAssets, setAvailableAssets] = useState(assets);
@@ -29,7 +47,7 @@ export function GeneratorClient({ assets }: { assets: MediaAsset[] }) {
   const [message, setMessage] = useState("");
   const { register, control, setValue, handleSubmit, formState: { errors } } = useForm<ContentDraft>({
     resolver: zodResolver(schema),
-    defaultValues: { title: "AI 시대, 아이에게 정말 필요한 공부", subtitle: "별거 다하는 원장님의 교육 실험", episode: "EP. 12", imageUrl: first?.url ?? "", imageId: first?.id, template: "bold", accent: "#f2c94c", duration: 6 },
+    defaultValues: { title: "AI 시대, 아이에게 정말 필요한 공부", subtitle: "별거 다하는 원장님의 교육 실험", episode: "EP. 12", imageUrl: first?.url ?? "", imageId: first?.id, template: "bold", accent: "#f2c94c", textColor: "#ffffff", fontStyle: "strong", titleSize: 104, subtitleSize: 34, frameStyle: "corners", frameColor: "#ffffff", frameWidth: 8, frameInset: 48, decoration: "underline", overlayOpacity: 0.7, imageZoom: 1.04, duration: 6 },
   });
   const watched = useWatch({ control });
   const values: ContentDraft = {
@@ -40,9 +58,25 @@ export function GeneratorClient({ assets }: { assets: MediaAsset[] }) {
     imageId: watched.imageId,
     template: watched.template ?? "bold",
     accent: watched.accent ?? "#f2c94c",
+    textColor: watched.textColor ?? "#ffffff",
+    fontStyle: watched.fontStyle ?? "strong",
+    titleSize: watched.titleSize ?? 104,
+    subtitleSize: watched.subtitleSize ?? 34,
+    frameStyle: watched.frameStyle ?? "corners",
+    frameColor: watched.frameColor ?? "#ffffff",
+    frameWidth: watched.frameWidth ?? 8,
+    frameInset: watched.frameInset ?? 48,
+    decoration: watched.decoration ?? "underline",
+    overlayOpacity: watched.overlayOpacity ?? 0.7,
+    imageZoom: watched.imageZoom ?? 1.04,
     duration: watched.duration ?? 6,
   };
   const frames = Math.round((values.duration || 6) * 30);
+
+  const applyTemplate = (template: ContentDraft["template"]) => {
+    setValue("template", template);
+    Object.entries(templatePresets[template]).forEach(([key, value]) => setValue(key as keyof ContentDraft, value as never));
+  };
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
@@ -80,12 +114,45 @@ export function GeneratorClient({ assets }: { assets: MediaAsset[] }) {
           <div className="field"><label className="label">부제</label><input className="input" {...register("subtitle")} />{errors.subtitle && <p className="form-error">{errors.subtitle.message}</p>}</div>
           <div className="field-row">
             <div className="field"><label className="label">회차 표기</label><input className="input" {...register("episode")} /></div>
-            <div className="field"><label className="label">템플릿</label><select className="select" {...register("template")}><option value="bold">강조형</option><option value="documentary">다큐형</option><option value="clean">클린형</option></select></div>
+            <div className="field"><label className="label">템플릿</label><select className="select" value={values.template} onChange={(event) => applyTemplate(event.target.value as ContentDraft["template"])}><option value="bold">강조형</option><option value="documentary">다큐형</option><option value="clean">클린형</option></select></div>
           </div>
-          <div className="field"><label className="label">대표 이미지</label><select className="select" value={values.imageId} onChange={(event) => { const item = availableAssets.find((asset) => asset.id === event.target.value); if (item) { setValue("imageId", item.id); setValue("imageUrl", item.url); } }}>{availableAssets.map((asset) => <option key={asset.id} value={asset.id}>{asset.title}</option>)}</select></div>
+          <div className="field"><label className="label">대표 이미지</label><select className="select" value={values.imageId ?? ""} onChange={(event) => { const item = availableAssets.find((asset) => asset.id === event.target.value); if (item) { setValue("imageId", item.id); setValue("imageUrl", item.url); } }}>{availableAssets.map((asset) => <option key={asset.id} value={asset.id}>{asset.title}</option>)}</select></div>
+
+          <div className="design-section">
+            <h4 className="design-heading"><Type size={15} /> 글자 스타일</h4>
+            <div className="field-row">
+              <div className="field"><label className="label">글꼴</label><select className="select" {...register("fontStyle")}><option value="strong">굵은 고딕</option><option value="rounded">부드러운 고딕</option><option value="serif">명조</option><option value="modern">모던 고딕</option></select></div>
+              <div className="field"><label className="label">글자 색상</label><input className="input color-control" type="color" {...register("textColor")} /></div>
+            </div>
+            <div className="field"><label className="label range-label">제목 크기 <output>{values.titleSize}px</output></label><input className="range" type="range" min="56" max="132" step="2" {...register("titleSize", { valueAsNumber: true })} /></div>
+            <div className="field"><label className="label range-label">부제 크기 <output>{values.subtitleSize}px</output></label><input className="range" type="range" min="20" max="52" step="2" {...register("subtitleSize", { valueAsNumber: true })} /></div>
+          </div>
+
+          <div className="design-section">
+            <h4 className="design-heading"><Square size={15} /> 프레임과 테두리</h4>
+            <div className="field-row">
+              <div className="field"><label className="label">테두리 모양</label><select className="select" {...register("frameStyle")}><option value="none">없음</option><option value="solid">사각 테두리</option><option value="double">이중 테두리</option><option value="corners">모서리 강조</option></select></div>
+              <div className="field"><label className="label">테두리 색상</label><input className="input color-control" type="color" disabled={values.frameStyle === "none"} {...register("frameColor")} /></div>
+            </div>
+            <div className="field"><label className="label range-label">테두리 두께 <output>{values.frameWidth}px</output></label><input className="range" type="range" min="2" max="18" step="1" disabled={values.frameStyle === "none"} {...register("frameWidth", { valueAsNumber: true })} /></div>
+            <div className="field"><label className="label range-label">테두리 여백 <output>{values.frameInset}px</output></label><input className="range" type="range" min="20" max="100" step="2" disabled={values.frameStyle === "none"} {...register("frameInset", { valueAsNumber: true })} /></div>
+          </div>
+
+          <div className="design-section">
+            <h4 className="design-heading"><Sparkles size={15} /> 강조 요소</h4>
+            <div className="field-row">
+              <div className="field"><label className="label">장식</label><select className="select" {...register("decoration")}><option value="none">없음</option><option value="underline">제목 밑줄</option><option value="side">세로 강조선</option><option value="dots">포인트 점</option><option value="circle">원형 포인트</option></select></div>
+              <div className="field"><label className="label">강조 색상</label><input className="input color-control" type="color" {...register("accent")} /></div>
+            </div>
+            <div className="field"><label className="label range-label">사진 어둡기 <output>{Math.round(values.overlayOpacity * 100)}%</output></label><input className="range" type="range" min="0.15" max="0.95" step="0.05" {...register("overlayOpacity", { valueAsNumber: true })} /></div>
+            <div className="field"><label className="label range-label">사진 확대 <output>{Math.round(values.imageZoom * 100)}%</output></label><input className="range" type="range" min="1" max="1.3" step="0.01" {...register("imageZoom", { valueAsNumber: true })} /></div>
+          </div>
+
+          <div className="design-section">
+            <h4 className="design-heading"><Film size={15} /> 영상 설정</h4>
           <div className="field-row">
-            <div className="field"><label className="label">강조 색상</label><input className="input" type="color" {...register("accent")} /></div>
             <div className="field"><label className="label">인트로 길이 · {values.duration}초</label><input className="range" type="range" min="3" max="12" step="1" {...register("duration", { valueAsNumber: true })} /></div>
+          </div>
           </div>
           <div style={{ display: "flex", gap: 9, flexWrap: "wrap" }}>
             <button className="button" disabled={Boolean(busy)} onClick={downloadPng}>{busy === "png" ? <LoaderCircle size={15} /> : <Download size={15} />} PNG 생성</button>
@@ -99,7 +166,7 @@ export function GeneratorClient({ assets }: { assets: MediaAsset[] }) {
         <div className="panel">
           <div className="panel-head"><h3>실시간 미리보기</h3><div><button className={`button ${tab === "thumbnail" ? "" : "secondary"}`} onClick={() => setTab("thumbnail")}><ImageIcon size={14} /> 썸네일</button> <button className={`button ${tab === "intro" ? "" : "secondary"}`} onClick={() => setTab("intro")}><Film size={14} /> 인트로</button></div></div>
           <div className="panel-body">
-            {tab === "thumbnail" ? <div className="preview-frame"><div className="thumb-stage" style={{ backgroundImage: `url(${values.imageUrl})` }}><div className="thumb-copy"><span className="thumb-kicker">{values.episode || "NEW"}</span><div className="thumb-title">{values.title || "제목을 입력하세요"}</div></div></div></div> : <Player component={IntroComposition} inputProps={values} durationInFrames={frames} compositionWidth={1920} compositionHeight={1080} fps={30} controls loop style={{ width: "100%", aspectRatio: "16 / 9", borderRadius: 6, overflow: "hidden" }} />}
+            {tab === "thumbnail" ? <ThumbnailPreview draft={values} /> : <Player component={IntroComposition} inputProps={values} durationInFrames={frames} compositionWidth={1920} compositionHeight={1080} fps={30} controls loop style={{ width: "100%", aspectRatio: "16 / 9", borderRadius: 6, overflow: "hidden" }} />}
             <div className="meta-row"><span className="chip">1920 × 1080</span><span className="chip">16:9</span><span className="chip">{tab === "thumbnail" ? "PNG" : `${values.duration}초 · 30fps`}</span></div>
           </div>
         </div>

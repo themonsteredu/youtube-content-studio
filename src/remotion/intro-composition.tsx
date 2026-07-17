@@ -8,6 +8,17 @@ export const defaultDraft: ContentDraft = {
   imageUrl: "/demo/classroom.png",
   template: "bold",
   accent: "#f2c94c",
+  textColor: "#ffffff",
+  fontStyle: "strong",
+  titleSize: 96,
+  subtitleSize: 34,
+  frameStyle: "corners",
+  frameColor: "#ffffff",
+  frameWidth: 8,
+  frameInset: 48,
+  decoration: "underline",
+  overlayOpacity: 0.7,
+  imageZoom: 1.04,
   duration: 6,
 };
 

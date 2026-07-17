@@ -19,6 +19,17 @@ export type ContentDraft = {
   imageId?: string;
   template: "bold" | "documentary" | "clean";
   accent: string;
+  textColor: string;
+  fontStyle: "strong" | "rounded" | "serif" | "modern";
+  titleSize: number;
+  subtitleSize: number;
+  frameStyle: "none" | "solid" | "double" | "corners";
+  frameColor: string;
+  frameWidth: number;
+  frameInset: number;
+  decoration: "none" | "underline" | "side" | "dots" | "circle";
+  overlayOpacity: number;
+  imageZoom: number;
   duration: number;
 };
 
