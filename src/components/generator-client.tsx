@@ -3,9 +3,10 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Player } from "@remotion/player";
 import { Download, Film, Image as ImageIcon, LoaderCircle } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
+import { listLocalAssets, mergeAssets } from "@/lib/local-media";
 import { IntroComposition } from "@/remotion/intro-composition";
 import type { ContentDraft, MediaAsset } from "@/types/studio";
 
@@ -21,7 +22,8 @@ const schema = z.object({
 });
 
 export function GeneratorClient({ assets }: { assets: MediaAsset[] }) {
-  const first = assets[0];
+  const [availableAssets, setAvailableAssets] = useState(assets);
+  const first = availableAssets[0];
   const [tab, setTab] = useState<"thumbnail" | "intro">("thumbnail");
   const [busy, setBusy] = useState<"png" | "mp4" | null>(null);
   const [message, setMessage] = useState("");
@@ -41,6 +43,15 @@ export function GeneratorClient({ assets }: { assets: MediaAsset[] }) {
     duration: watched.duration ?? 6,
   };
   const frames = Math.round((values.duration || 6) * 30);
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      listLocalAssets()
+        .then((localAssets) => setAvailableAssets((current) => mergeAssets(localAssets, current)))
+        .catch(() => undefined);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, []);
 
   const downloadPng = handleSubmit(async (draft) => {
     setBusy("png"); setMessage("");
@@ -71,7 +82,7 @@ export function GeneratorClient({ assets }: { assets: MediaAsset[] }) {
             <div className="field"><label className="label">회차 표기</label><input className="input" {...register("episode")} /></div>
             <div className="field"><label className="label">템플릿</label><select className="select" {...register("template")}><option value="bold">강조형</option><option value="documentary">다큐형</option><option value="clean">클린형</option></select></div>
           </div>
-          <div className="field"><label className="label">대표 이미지</label><select className="select" value={values.imageId} onChange={(event) => { const item = assets.find((asset) => asset.id === event.target.value); if (item) { setValue("imageId", item.id); setValue("imageUrl", item.url); } }}>{assets.map((asset) => <option key={asset.id} value={asset.id}>{asset.title}</option>)}</select></div>
+          <div className="field"><label className="label">대표 이미지</label><select className="select" value={values.imageId} onChange={(event) => { const item = availableAssets.find((asset) => asset.id === event.target.value); if (item) { setValue("imageId", item.id); setValue("imageUrl", item.url); } }}>{availableAssets.map((asset) => <option key={asset.id} value={asset.id}>{asset.title}</option>)}</select></div>
           <div className="field-row">
             <div className="field"><label className="label">강조 색상</label><input className="input" type="color" {...register("accent")} /></div>
             <div className="field"><label className="label">인트로 길이 · {values.duration}초</label><input className="range" type="range" min="3" max="12" step="1" {...register("duration", { valueAsNumber: true })} /></div>

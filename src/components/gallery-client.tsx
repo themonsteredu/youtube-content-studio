@@ -2,7 +2,8 @@
 
 import { Search, Star, Upload } from "lucide-react";
 import Image from "next/image";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { listLocalAssets, mergeAssets, saveLocalAsset } from "@/lib/local-media";
 import type { MediaAsset } from "@/types/studio";
 
 const categoryNames = { class: "수업", activity: "활동", portrait: "인물", space: "공간" };
@@ -11,8 +12,25 @@ export function GalleryClient({ initialAssets }: { initialAssets: MediaAsset[] }
   const [assets, setAssets] = useState(initialAssets);
   const [query, setQuery] = useState("");
   const [busy, setBusy] = useState(false);
+  const [localReady, setLocalReady] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const visible = useMemo(() => assets.filter((item) => `${item.title} ${item.tags.join(" ")}`.toLowerCase().includes(query.toLowerCase())), [assets, query]);
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      listLocalAssets()
+        .then((localAssets) => setAssets((current) => mergeAssets(localAssets, current)))
+        .catch(() => undefined)
+        .finally(() => setLocalReady(true));
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, []);
+
+  useEffect(() => {
+    if (!localReady) return;
+    const uploads = assets.filter((asset) => asset.url.startsWith("data:") && !asset.storagePath.startsWith("demo/"));
+    void Promise.all(uploads.map((asset) => saveLocalAsset(asset))).catch(() => undefined);
+  }, [assets, localReady]);
 
   async function upload(file?: File) {
     if (!file) return;
@@ -23,7 +41,11 @@ export function GalleryClient({ initialAssets }: { initialAssets: MediaAsset[] }
     form.set("category", "activity");
     const response = await fetch("/api/assets", { method: "POST", body: form });
     const payload = await response.json();
-    if (response.ok) setAssets((current) => [payload.asset, ...current]);
+    if (response.ok) {
+      const asset = payload.asset as MediaAsset;
+      await saveLocalAsset(asset);
+      setAssets((current) => mergeAssets([asset], current));
+    }
     else window.alert(payload.error ?? "업로드에 실패했습니다.");
     setBusy(false);
     if (inputRef.current) inputRef.current.value = "";
