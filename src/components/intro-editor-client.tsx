@@ -1,7 +1,7 @@
 "use client";
 
 import { Player } from "@remotion/player";
-import { ArrowDown, ArrowUp, Image as ImageIcon, Layers3, MonitorPlay, Plus, RotateCcw, Save, Trash2, Type, UserRoundPlus } from "lucide-react";
+import { ArrowDown, ArrowUp, Download, Image as ImageIcon, Layers3, LoaderCircle, MonitorPlay, Plus, RotateCcw, Save, Square, Trash2, Type, UserRoundPlus } from "lucide-react";
 import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
@@ -26,7 +26,11 @@ export function IntroEditorClient({ initialAssets }: { initialAssets: MediaAsset
   const [mode, setMode] = useState<"edit" | "preview">("edit");
   const [scale, setScale] = useState(0.5);
   const [ready, setReady] = useState(false);
+  const [exportStatus, setExportStatus] = useState<"idle" | "rendering" | "complete" | "error">("idle");
+  const [exportProgress, setExportProgress] = useState(0);
+  const [exportError, setExportError] = useState("");
   const canvasRef = useRef<HTMLDivElement>(null);
+  const exportControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
@@ -60,6 +64,8 @@ export function IntroEditorClient({ initialAssets }: { initialAssets: MediaAsset
     }, 300);
     return () => window.clearTimeout(timer);
   }, [ready, scene]);
+
+  useEffect(() => () => exportControllerRef.current?.abort(), []);
 
   const selected = useMemo(() => scene.elements.find((element) => element.id === selectedId) ?? null, [scene.elements, selectedId]);
   const orderedElements = useMemo(() => [...scene.elements].sort((a, b) => b.zIndex - a.zIndex), [scene.elements]);
@@ -106,6 +112,68 @@ export function IntroEditorClient({ initialAssets }: { initialAssets: MediaAsset
     setMode("edit");
   }
 
+  async function exportMp4() {
+    const controller = new AbortController();
+    exportControllerRef.current = controller;
+    setMode("preview");
+    setExportStatus("rendering");
+    setExportProgress(0);
+    setExportError("");
+
+    try {
+      const { renderMediaOnWeb } = await import("@remotion/web-renderer");
+      const result = await renderMediaOnWeb({
+        composition: {
+          id: "SceneIntroExport",
+          component: SceneComposition,
+          width: 1920,
+          height: 1080,
+          fps: 30,
+          durationInFrames: frames,
+          defaultProps: { scene },
+        },
+        inputProps: { scene },
+        container: "mp4",
+        videoCodec: "h264",
+        videoBitrate: "high",
+        hardwareAcceleration: "prefer-hardware",
+        muted: true,
+        licenseKey: "free-license",
+        signal: controller.signal,
+        onProgress: ({ progress }) => {
+          setExportProgress(Math.min(99, Math.round(progress * 100)));
+        },
+      });
+
+      const blob = await result.getBlob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      const date = new Date().toISOString().slice(0, 10);
+      link.href = url;
+      link.download = `youtube-intro-${date}.mp4`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setExportProgress(100);
+      setExportStatus("complete");
+    } catch (error) {
+      if (controller.signal.aborted) {
+        setExportStatus("idle");
+        setExportProgress(0);
+      } else {
+        setExportStatus("error");
+        setExportError(error instanceof Error ? error.message : "영상 생성 중 오류가 발생했습니다.");
+      }
+    } finally {
+      if (exportControllerRef.current === controller) exportControllerRef.current = null;
+    }
+  }
+
+  function cancelExport() {
+    exportControllerRef.current?.abort();
+  }
+
   if (!ready) return <div className="content"><div className="panel empty">인트로 편집기를 불러오는 중입니다.</div></div>;
 
   return (
@@ -114,9 +182,27 @@ export function IntroEditorClient({ initialAssets }: { initialAssets: MediaAsset
         <div><h2>인트로 편집기</h2><p>요소를 클릭해 배치하고, 화면에서 직접 움직여 인트로 장면을 만듭니다.</p></div>
         <div className="editor-head-actions">
           <span className="autosave"><Save size={14} /> 자동 저장</span>
+          {exportStatus === "rendering" ? (
+            <button type="button" className="button secondary" onClick={cancelExport}><Square size={14} /> 생성 중지</button>
+          ) : (
+            <button type="button" className="button" onClick={() => void exportMp4()}><Download size={15} /> MP4 내보내기</button>
+          )}
           <button type="button" className="button secondary" onClick={resetScene}><RotateCcw size={15} /> 초기화</button>
         </div>
       </div>
+
+      {exportStatus !== "idle" && (
+        <div className={`panel export-status ${exportStatus}`} role="status" aria-live="polite">
+          <div className="export-status-copy">
+            {exportStatus === "rendering" && <LoaderCircle className="spin" size={17} />}
+            {exportStatus === "rendering" && <strong>MP4 생성 중 {exportProgress}%</strong>}
+            {exportStatus === "complete" && <strong>MP4 저장이 완료되었습니다.</strong>}
+            {exportStatus === "error" && <strong>MP4를 만들지 못했습니다.</strong>}
+            <span>{exportStatus === "error" ? exportError : exportStatus === "rendering" ? "이 화면을 닫지 마세요. 영상 길이에 따라 시간이 걸릴 수 있습니다." : "브라우저의 다운로드 폴더에서 확인할 수 있습니다."}</span>
+          </div>
+          {exportStatus !== "error" && <div className="export-progress" aria-hidden="true"><i style={{ width: `${exportProgress}%` }} /></div>}
+        </div>
+      )}
 
       <div className="intro-editor-layout">
         <aside className="panel editor-assets">
