@@ -1,8 +1,9 @@
-import type { MediaAsset } from "@/types/studio";
+import type { IntroScene, MediaAsset } from "@/types/studio";
 
 const DATABASE_NAME = "youtube-content-studio";
-const DATABASE_VERSION = 1;
+const DATABASE_VERSION = 2;
 const ASSET_STORE = "media-assets";
+const SCENE_STORE = "intro-scenes";
 
 function openDatabase() {
   return new Promise<IDBDatabase>((resolve, reject) => {
@@ -12,6 +13,9 @@ function openDatabase() {
       const database = request.result;
       if (!database.objectStoreNames.contains(ASSET_STORE)) {
         database.createObjectStore(ASSET_STORE, { keyPath: "id" });
+      }
+      if (!database.objectStoreNames.contains(SCENE_STORE)) {
+        database.createObjectStore(SCENE_STORE, { keyPath: "id" });
       }
     };
     request.onsuccess = () => resolve(request.result);
@@ -59,4 +63,36 @@ export function mergeAssets(localAssets: MediaAsset[], initialAssets: MediaAsset
     if (!merged.has(asset.id)) merged.set(asset.id, asset);
   }
   return [...merged.values()];
+}
+
+export async function loadLocalScene(): Promise<IntroScene | null> {
+  if (typeof window === "undefined" || !window.indexedDB) return null;
+  const database = await openDatabase();
+  return new Promise((resolve, reject) => {
+    const request = database.transaction(SCENE_STORE, "readonly").objectStore(SCENE_STORE).get("main");
+    request.onsuccess = () => {
+      database.close();
+      resolve((request.result as { id: string; scene: IntroScene } | undefined)?.scene ?? null);
+    };
+    request.onerror = () => {
+      database.close();
+      reject(request.error);
+    };
+  });
+}
+
+export async function saveLocalScene(scene: IntroScene) {
+  if (typeof window === "undefined" || !window.indexedDB) return;
+  const database = await openDatabase();
+  return new Promise<void>((resolve, reject) => {
+    const request = database.transaction(SCENE_STORE, "readwrite").objectStore(SCENE_STORE).put({ id: "main", scene });
+    request.onsuccess = () => {
+      database.close();
+      resolve();
+    };
+    request.onerror = () => {
+      database.close();
+      reject(request.error);
+    };
+  });
 }
