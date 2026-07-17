@@ -1,13 +1,14 @@
 "use client";
 
 import { Player } from "@remotion/player";
-import { ArrowDown, ArrowUp, Download, Image as ImageIcon, Layers3, LoaderCircle, MonitorPlay, Plus, RotateCcw, Save, Square, Trash2, Type, UserRoundPlus } from "lucide-react";
+import { ArrowDown, ArrowUp, Download, FlipHorizontal2, Image as ImageIcon, Images, Layers3, LoaderCircle, MonitorPlay, Plus, RotateCcw, Save, Sparkles, Square, Trash2, Type, UserRoundPlus } from "lucide-react";
 import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
 import { Rnd } from "react-rnd";
+import { IntroAiAssets } from "@/components/intro-ai-assets";
 import { listLocalAssets, loadLocalScene, mergeAssets, saveLocalScene } from "@/lib/local-media";
-import { defaultScene, SceneComposition } from "@/remotion/scene-composition";
+import { defaultScene, sceneImageFilter, SceneComposition } from "@/remotion/scene-composition";
 import type { IntroScene, IntroSceneElement, MediaAsset, SceneAnimation } from "@/types/studio";
 
 const animationLabels: Record<SceneAnimation, string> = {
@@ -24,6 +25,7 @@ export function IntroEditorClient({ initialAssets }: { initialAssets: MediaAsset
   const [scene, setScene] = useState<IntroScene>(defaultScene);
   const [selectedId, setSelectedId] = useState<string | null>(defaultScene.elements[0]?.id ?? null);
   const [mode, setMode] = useState<"edit" | "preview">("edit");
+  const [assetSource, setAssetSource] = useState<"gallery" | "ai">("gallery");
   const [scale, setScale] = useState(0.5);
   const [ready, setReady] = useState(false);
   const [exportStatus, setExportStatus] = useState<"idle" | "rendering" | "complete" | "error">("idle");
@@ -78,12 +80,17 @@ export function IntroEditorClient({ initialAssets }: { initialAssets: MediaAsset
   function addAsset(asset: MediaAsset, type: "background" | "image") {
     const topLayer = Math.max(0, ...scene.elements.map((element) => element.zIndex));
     const element: IntroSceneElement = type === "background"
-      ? { id: crypto.randomUUID(), type, name: asset.title, src: asset.url, x: 0, y: 0, width: 1920, height: 1080, rotation: 0, opacity: 1, zIndex: 0, start: 0, end: scene.duration, animation: "fade" }
-      : { id: crypto.randomUUID(), type: asset.category === "portrait" ? "image" : "logo", name: asset.title, src: asset.url, x: 1280, y: 120, width: 520, height: 820, rotation: 0, opacity: 1, zIndex: topLayer + 1, start: 0.3, end: scene.duration - 0.3, animation: "slide-right" };
+      ? { id: crypto.randomUUID(), type, name: asset.title, src: asset.url, x: 0, y: 0, width: 1920, height: 1080, rotation: 0, opacity: 1, zIndex: 0, start: 0, end: scene.duration, animation: "fade", brightness: 100, blur: 0 }
+      : { id: crypto.randomUUID(), type: asset.category === "portrait" ? "image" : "logo", name: asset.title, src: asset.url, x: 1280, y: 120, width: 520, height: 820, rotation: 0, opacity: 1, zIndex: topLayer + 1, start: 0.3, end: scene.duration - 0.3, animation: "slide-right", brightness: 100, blur: 0, flipX: false, outlineColor: "#ffffff", outlineWidth: 0, shadow: 18 };
 
     setScene((current) => ({ ...current, elements: type === "background" ? [...current.elements.filter((item) => item.type !== "background"), element] : [...current.elements, element] }));
     setSelectedId(element.id);
     setMode("edit");
+  }
+
+  function addGeneratedAsset(asset: MediaAsset, type: "background" | "image") {
+    setAssets((current) => mergeAssets([asset], current));
+    addAsset(asset, type);
   }
 
   function addText() {
@@ -206,20 +213,28 @@ export function IntroEditorClient({ initialAssets }: { initialAssets: MediaAsset
 
       <div className="intro-editor-layout">
         <aside className="panel editor-assets">
-          <div className="panel-head"><h3>요소</h3><button type="button" className="button icon secondary" title="텍스트 추가" onClick={addText}><Type size={16} /></button></div>
-          <div className="asset-tool-row"><button className="button secondary" type="button" onClick={addText}><Plus size={14} /> 텍스트</button></div>
-          <div className="editor-asset-list">
-            {assets.map((asset) => (
-              <article className="editor-asset" key={asset.id}>
-                <div className="editor-asset-thumb"><Image src={asset.url} alt={asset.title} fill sizes="150px" unoptimized /></div>
-                <strong>{asset.title}</strong>
-                <div className="editor-asset-actions">
-                  <button type="button" title="배경으로 사용" onClick={() => addAsset(asset, "background")}><ImageIcon size={15} /></button>
-                  <button type="button" title="요소로 추가" onClick={() => addAsset(asset, "image")}><UserRoundPlus size={15} /></button>
-                </div>
-              </article>
-            ))}
+          <div className="panel-head editor-assets-head"><h3>소재</h3><button type="button" className="button icon secondary" title="텍스트 추가" onClick={addText}><Type size={16} /></button></div>
+          <div className="asset-source-tabs" aria-label="소재 종류">
+            <button type="button" className={assetSource === "gallery" ? "active" : ""} onClick={() => setAssetSource("gallery")}><Images size={14} /> 갤러리</button>
+            <button type="button" className={assetSource === "ai" ? "active" : ""} onClick={() => setAssetSource("ai")}><Sparkles size={14} /> AI 생성</button>
           </div>
+          {assetSource === "gallery" ? (
+            <>
+              <div className="asset-tool-row"><button className="button secondary" type="button" onClick={addText}><Plus size={14} /> 텍스트</button></div>
+              <div className="editor-asset-list">
+                {assets.map((asset) => (
+                  <article className="editor-asset" key={asset.id}>
+                    <div className="editor-asset-thumb"><Image src={asset.url} alt={asset.title} fill sizes="150px" unoptimized /></div>
+                    <strong>{asset.title}</strong>
+                    <div className="editor-asset-actions">
+                      <button type="button" title="배경으로 사용" onClick={() => addAsset(asset, "background")}><ImageIcon size={15} /></button>
+                      <button type="button" title="요소로 추가" onClick={() => addAsset(asset, "image")}><UserRoundPlus size={15} /></button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </>
+          ) : <IntroAiAssets assets={assets} onGenerated={addGeneratedAsset} />}
         </aside>
 
         <main className="editor-workspace">
@@ -250,8 +265,8 @@ export function IntroEditorClient({ initialAssets }: { initialAssets: MediaAsset
                     onDragStop={(_, data) => updateElement(element.id, { x: Math.round(data.x / scale), y: Math.round(data.y / scale) })}
                     onResizeStop={(_, __, ref, ___, position) => updateElement(element.id, { width: Math.round(ref.offsetWidth / scale), height: Math.round(ref.offsetHeight / scale), x: Math.round(position.x / scale), y: Math.round(position.y / scale) })}
                   >
-                    <div className="scene-element-content" style={{ transform: `rotate(${element.rotation}deg)` }}>
-                      {element.type === "text" ? <div className="scene-text" style={{ color: element.color, fontSize: (element.fontSize ?? 80) * scale, fontWeight: element.fontWeight }}>{element.text}</div> : element.src ? <Image src={element.src} alt={element.name} fill sizes="50vw" unoptimized draggable={false} style={{ objectFit: element.type === "background" ? "cover" : "contain" }} /> : null}
+                    <div className="scene-element-content" style={{ transform: `rotate(${element.rotation}deg) scaleX(${element.flipX ? -1 : 1})` }}>
+                      {element.type === "text" ? <div className="scene-text" style={{ color: element.color, fontSize: (element.fontSize ?? 80) * scale, fontWeight: element.fontWeight }}>{element.text}</div> : element.src ? <Image src={element.src} alt={element.name} fill sizes="50vw" unoptimized draggable={false} style={{ objectFit: element.type === "background" ? "cover" : "contain", filter: sceneImageFilter(element) }} /> : null}
                     </div>
                   </Rnd>
                 ))}
@@ -283,7 +298,9 @@ export function IntroEditorClient({ initialAssets }: { initialAssets: MediaAsset
                 <div className="field"><label className="label">등장 효과</label><select className="select" value={selected.animation} onChange={(event) => updateElement(selected.id, { animation: event.target.value as SceneAnimation })}>{Object.entries(animationLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div>
                 <div className="field-row"><div className="field"><label className="label">시작</label><input className="input" type="number" min="0" max={scene.duration} step="0.1" value={selected.start} onChange={(event) => updateElement(selected.id, { start: Math.min(Number(event.target.value), selected.end) })} /></div><div className="field"><label className="label">종료</label><input className="input" type="number" min="0" max={scene.duration} step="0.1" value={selected.end} onChange={(event) => updateElement(selected.id, { end: Math.max(Number(event.target.value), selected.start) })} /></div></div>
                 <div className="field"><label className="label">투명도 · {Math.round(selected.opacity * 100)}%</label><input className="range" type="range" min="0.1" max="1" step="0.05" value={selected.opacity} onChange={(event) => updateElement(selected.id, { opacity: Number(event.target.value) })} /></div>
+                {selected.type !== "text" && <><div className="field"><label className="label">밝기 · {selected.brightness ?? 100}%</label><input className="range" type="range" min="40" max="160" step="5" value={selected.brightness ?? 100} onChange={(event) => updateElement(selected.id, { brightness: Number(event.target.value) })} /></div><div className="field"><label className="label">흐림 · {selected.blur ?? 0}px</label><input className="range" type="range" min="0" max="20" step="1" value={selected.blur ?? 0} onChange={(event) => updateElement(selected.id, { blur: Number(event.target.value) })} /></div></>}
                 {selected.type !== "background" && <div className="field"><label className="label">회전 · {selected.rotation}°</label><input className="range" type="range" min="-30" max="30" step="1" value={selected.rotation} onChange={(event) => updateElement(selected.id, { rotation: Number(event.target.value) })} /></div>}
+                {(selected.type === "image" || selected.type === "logo") && <><button type="button" className={`button secondary flip-control ${selected.flipX ? "active" : ""}`} onClick={() => updateElement(selected.id, { flipX: !selected.flipX })}><FlipHorizontal2 size={15} /> 좌우 반전</button><div className="field"><label className="label">외곽선 · {selected.outlineWidth ?? 0}px</label><input className="range" type="range" min="0" max="14" step="1" value={selected.outlineWidth ?? 0} onChange={(event) => updateElement(selected.id, { outlineWidth: Number(event.target.value) })} /></div><div className="field"><label className="label">외곽선 색상</label><input className="input color-control" type="color" value={selected.outlineColor ?? "#ffffff"} onChange={(event) => updateElement(selected.id, { outlineColor: event.target.value })} /></div><div className="field"><label className="label">그림자 · {selected.shadow ?? 0}px</label><input className="range" type="range" min="0" max="40" step="2" value={selected.shadow ?? 0} onChange={(event) => updateElement(selected.id, { shadow: Number(event.target.value) })} /></div></>}
                 <button type="button" className="button danger" onClick={removeSelected}><Trash2 size={15} /> 요소 삭제</button>
               </>
             )}

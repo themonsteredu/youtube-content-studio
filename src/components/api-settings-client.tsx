@@ -114,7 +114,7 @@ export function ApiSettingsClient() {
         </div>
       </section>
 
-      <div className="notice">현재 자동 정리 API 호출은 연결하지 않았습니다. 설정을 켜도 사용자가 자동 정리 명령을 실행하기 전에는 외부 요청이 발생하지 않습니다.</div>
+      <div className="notice">설정을 켜도 사용자가 AI 이미지 생성 버튼을 누르기 전에는 외부 요청과 API 비용이 발생하지 않습니다.</div>
     </div>
   );
 }

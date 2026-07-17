@@ -42,6 +42,16 @@ function animationTransform(element: IntroSceneElement, progress: number) {
   return "none";
 }
 
+export function sceneImageFilter(element: IntroSceneElement) {
+  const filters = [`brightness(${element.brightness ?? 100}%)`, `blur(${element.blur ?? 0}px)`];
+  const outline = element.outlineWidth ?? 0;
+  const outlineColor = element.outlineColor ?? "#ffffff";
+  if (outline > 0) filters.push(`drop-shadow(${outline}px 0 0 ${outlineColor})`, `drop-shadow(${-outline}px 0 0 ${outlineColor})`, `drop-shadow(0 ${outline}px 0 ${outlineColor})`, `drop-shadow(0 ${-outline}px 0 ${outlineColor})`);
+  const shadow = element.shadow ?? 0;
+  if (shadow > 0) filters.push(`drop-shadow(0 ${Math.round(shadow / 3)}px ${shadow}px rgba(0,0,0,.5))`);
+  return filters.join(" ");
+}
+
 function SceneElement({ element }: { element: IntroSceneElement }) {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
@@ -58,7 +68,7 @@ function SceneElement({ element }: { element: IntroSceneElement }) {
     height: element.height,
     zIndex: element.zIndex,
     opacity: visible ? element.opacity * enter * exit : 0,
-    transform: `${animationTransform(element, enter)} rotate(${element.rotation}deg)`,
+    transform: `${animationTransform(element, enter)} rotate(${element.rotation}deg) scaleX(${element.flipX ? -1 : 1})`,
     transformOrigin: "center",
     overflow: "hidden",
   };
@@ -72,7 +82,7 @@ function SceneElement({ element }: { element: IntroSceneElement }) {
   }
 
   if (!element.src) return null;
-  return <Img src={resolveSource(element.src)} style={{ ...style, objectFit: element.type === "background" ? "cover" : "contain" }} />;
+  return <Img src={resolveSource(element.src)} style={{ ...style, objectFit: element.type === "background" ? "cover" : "contain", filter: sceneImageFilter(element) }} />;
 }
 
 export function SceneComposition({ scene }: { scene: IntroScene }) {

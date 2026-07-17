@@ -53,6 +53,12 @@ export type IntroSceneElement = {
   color?: string;
   fontSize?: number;
   fontWeight?: number;
+  brightness?: number;
+  blur?: number;
+  flipX?: boolean;
+  outlineColor?: string;
+  outlineWidth?: number;
+  shadow?: number;
 };
 
 export type IntroScene = {
