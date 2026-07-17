@@ -2,17 +2,21 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Clapperboard, History, Images, Sparkles } from "lucide-react";
+import { Clapperboard, History, Images, NotebookPen, Settings, Sparkles } from "lucide-react";
 
 const items = [
+  { href: "/admin/youtube-planner", label: "AI 기획 보드", icon: NotebookPen },
   { href: "/admin/youtube-gallery", label: "이미지 갤러리", icon: Images },
   { href: "/admin/youtube-generator", label: "콘텐츠 생성기", icon: Sparkles },
   { href: "/admin/youtube-history", label: "생성 이력", icon: History },
 ];
 
+const settingsItem = { href: "/admin/settings", label: "설정", icon: Settings };
+const allItems = [...items, settingsItem];
+
 export function StudioShell({ children, email }: { children: React.ReactNode; email: string }) {
   const pathname = usePathname();
-  const current = items.find((item) => pathname.startsWith(item.href));
+  const current = allItems.find((item) => pathname.startsWith(item.href));
 
   return (
     <div className="studio-shell">
@@ -28,7 +32,12 @@ export function StudioShell({ children, email }: { children: React.ReactNode; em
             </Link>
           ))}
         </nav>
-        <div className="sidebar-foot">YouTube 운영 도구<br />v0.1 studio</div>
+        <div className="nav-bottom">
+          <Link href={settingsItem.href} className={`nav-link ${pathname.startsWith(settingsItem.href) ? "active" : ""}`}>
+            <Settings size={17} /> 설정
+          </Link>
+          <div className="sidebar-foot">YouTube 운영 도구<br />v0.2 studio</div>
+        </div>
       </aside>
       <main className="main">
         <header className="topbar">
@@ -38,7 +47,7 @@ export function StudioShell({ children, email }: { children: React.ReactNode; em
         {children}
       </main>
       <nav className="mobile-nav" aria-label="모바일 관리자 메뉴">
-        {items.map(({ href, label, icon: Icon }) => <Link key={href} href={href}><Icon size={18} />{label}</Link>)}
+        {allItems.map(({ href, label, icon: Icon }) => <Link key={href} href={href} className={pathname.startsWith(href) ? "active" : ""}><Icon size={18} />{label}</Link>)}
       </nav>
     </div>
   );
