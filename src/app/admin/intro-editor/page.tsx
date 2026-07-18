@@ -1,6 +1,5 @@
-import { IntroEditorClient } from "@/components/intro-editor-client";
-import { listAssets } from "@/lib/studio-data";
+import { redirect } from "next/navigation";
 
 export default async function IntroEditorPage() {
-  return <IntroEditorClient initialAssets={await listAssets()} />;
+  redirect("/admin/youtube-generator?mode=intro");
 }

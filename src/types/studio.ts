@@ -11,6 +11,33 @@ export type MediaAsset = {
   createdAt: string;
 };
 
+export type ThumbnailElementType = "text" | "rectangle" | "circle" | "line" | "image";
+export type ThumbnailElementRole = "title" | "subtitle" | "episode" | "custom";
+
+export type ThumbnailElement = {
+  id: string;
+  name: string;
+  type: ThumbnailElementType;
+  role?: ThumbnailElementRole;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rotation: number;
+  opacity: number;
+  zIndex: number;
+  text?: string;
+  src?: string;
+  color?: string;
+  backgroundColor?: string;
+  borderColor?: string;
+  borderWidth?: number;
+  borderRadius?: number;
+  fontStyle?: "strong" | "rounded" | "serif" | "modern";
+  fontSize?: number;
+  fontWeight?: number;
+};
+
 export type ContentDraft = {
   title: string;
   subtitle: string;
@@ -30,6 +57,7 @@ export type ContentDraft = {
   decoration: "none" | "underline" | "side" | "dots" | "circle";
   overlayOpacity: number;
   imageZoom: number;
+  thumbnailElements?: ThumbnailElement[];
   duration: number;
 };
 

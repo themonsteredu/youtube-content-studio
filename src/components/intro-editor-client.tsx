@@ -20,7 +20,7 @@ const animationLabels: Record<SceneAnimation, string> = {
   pop: "확대되며 등장",
 };
 
-export function IntroEditorClient({ initialAssets }: { initialAssets: MediaAsset[] }) {
+export function IntroEditorClient({ initialAssets, embedded = false }: { initialAssets: MediaAsset[]; embedded?: boolean }) {
   const [assets, setAssets] = useState(initialAssets);
   const [scene, setScene] = useState<IntroScene>(defaultScene);
   const [selectedId, setSelectedId] = useState<string | null>(defaultScene.elements[0]?.id ?? null);
@@ -181,12 +181,12 @@ export function IntroEditorClient({ initialAssets }: { initialAssets: MediaAsset
     exportControllerRef.current?.abort();
   }
 
-  if (!ready) return <div className="content"><div className="panel empty">인트로 편집기를 불러오는 중입니다.</div></div>;
+  if (!ready) return <div className={embedded ? "embedded-intro-editor" : "content"}><div className="panel empty">인트로 편집기를 불러오는 중입니다.</div></div>;
 
   return (
-    <div className="content intro-editor-page">
-      <div className="page-head intro-editor-head">
-        <div><h2>인트로 편집기</h2><p>요소를 클릭해 배치하고, 화면에서 직접 움직여 인트로 장면을 만듭니다.</p></div>
+    <div className={embedded ? "embedded-intro-editor" : "content intro-editor-page"}>
+      <div className={embedded ? "embedded-editor-actions" : "page-head intro-editor-head"}>
+        {!embedded && <div><h2>인트로 편집기</h2><p>요소를 클릭해 배치하고, 화면에서 직접 움직여 인트로 장면을 만듭니다.</p></div>}
         <div className="editor-head-actions">
           <span className="autosave"><Save size={14} /> 자동 저장</span>
           {exportStatus === "rendering" ? (

@@ -5,6 +5,30 @@ import { assertAdminApi, authErrorResponse } from "@/lib/auth-api";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
+const thumbnailElementInput = z.object({
+  id: z.string().min(1).max(100),
+  name: z.string().min(1).max(100),
+  type: z.enum(["text", "rectangle", "circle", "line", "image"]),
+  role: z.enum(["title", "subtitle", "episode", "custom"]).optional(),
+  x: z.number().min(-1920).max(3840),
+  y: z.number().min(-1080).max(2160),
+  width: z.number().min(2).max(3840),
+  height: z.number().min(2).max(2160),
+  rotation: z.number().min(-360).max(360),
+  opacity: z.number().min(0).max(1),
+  zIndex: z.number().min(0).max(1000),
+  text: z.string().max(200).optional(),
+  src: z.string().max(12_000_000).optional(),
+  color: z.string().optional(),
+  backgroundColor: z.string().optional(),
+  borderColor: z.string().optional(),
+  borderWidth: z.number().min(0).max(80).optional(),
+  borderRadius: z.number().min(0).max(500).optional(),
+  fontStyle: z.enum(["strong", "rounded", "serif", "modern"]).optional(),
+  fontSize: z.number().min(8).max(300).optional(),
+  fontWeight: z.number().min(100).max(900).optional(),
+});
+
 const input = z.object({
   title: z.string().min(2).max(60),
   subtitle: z.string().max(80),
@@ -23,9 +47,11 @@ const input = z.object({
   decoration: z.enum(["none", "underline", "side", "dots", "circle"]).default("underline"),
   overlayOpacity: z.number().min(0.15).max(0.95).default(0.7),
   imageZoom: z.number().min(1).max(1.3).default(1.04),
+  thumbnailElements: z.array(thumbnailElementInput).max(30).optional(),
 });
 
 type ThumbnailInput = z.infer<typeof input>;
+type ThumbnailElementInput = z.infer<typeof thumbnailElementInput>;
 
 const fontFiles: Record<ThumbnailInput["fontStyle"], string> = {
   strong: "NotoSansKR-900.ttf",
@@ -53,6 +79,34 @@ function loadFont(request: Request, style: ThumbnailInput["fontStyle"]) {
   });
   fontCache.set(url, pending);
   return pending;
+}
+
+function renderThumbnailElement(element: ThumbnailElementInput, request: Request) {
+  const style = element.fontStyle ?? "strong";
+  const common = {
+    position: "absolute" as const,
+    zIndex: element.zIndex + 5,
+    left: element.x,
+    top: element.y,
+    width: element.width,
+    height: element.height,
+    display: "flex",
+    opacity: element.opacity,
+    transform: `rotate(${element.rotation}deg)`,
+  };
+  if (element.type === "text") {
+    const hasBackground = Boolean(element.backgroundColor && element.backgroundColor !== "transparent");
+    return <div key={element.id} style={{ ...common, alignItems: "center", padding: hasBackground ? "0 20px" : 0, color: element.color ?? "#ffffff", background: element.backgroundColor ?? "transparent", border: `${element.borderWidth ?? 0}px solid ${element.borderColor ?? "transparent"}`, borderRadius: element.borderRadius ?? 0, fontFamily: `ThumbnailFont-${style}`, fontSize: element.fontSize ?? 64, fontWeight: element.fontWeight ?? fontWeights[style], lineHeight: 1.05, whiteSpace: "pre-wrap", wordBreak: "keep-all", overflow: "hidden" }}>{element.text ?? ""}</div>;
+  }
+  if (element.type === "image" && element.src) {
+    const source = element.src.startsWith("/") ? new URL(element.src, request.url).toString() : element.src;
+    return <div key={element.id} style={{ ...common, overflow: "hidden" }}>
+      {/* ImageResponse renders HTML-compatible elements rather than next/image. */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={source} alt="" width={element.width} height={element.height} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+    </div>;
+  }
+  return <div key={element.id} style={{ ...common, background: element.backgroundColor ?? "transparent", border: element.type === "line" ? 0 : `${element.borderWidth ?? 0}px solid ${element.borderColor ?? "transparent"}`, borderRadius: element.type === "circle" ? "50%" : element.borderRadius ?? 0 }} />;
 }
 
 function ThumbnailFrame({ draft }: { draft: ThumbnailInput }) {
@@ -95,7 +149,8 @@ export async function POST(request: Request) {
   }
 
   const imageUrl = draft.imageUrl.startsWith("/") ? new URL(draft.imageUrl, request.url).toString() : draft.imageUrl;
-  const fontData = await loadFont(request, draft.fontStyle);
+  const usedFontStyles = [...new Set([draft.fontStyle, ...(draft.thumbnailElements ?? []).filter((element) => element.type === "text").map((element) => element.fontStyle ?? draft.fontStyle)])];
+  const loadedFonts = await Promise.all(usedFontStyles.map(async (style) => ({ style, data: await loadFont(request, style) })));
   const alpha = draft.overlayOpacity;
   const overlay = draft.template === "documentary"
     ? `linear-gradient(90deg, rgba(8,9,12,${alpha}) 0%, rgba(8,9,12,${alpha * 0.85}) 42%, rgba(8,9,12,0) 88%)`
@@ -105,26 +160,26 @@ export async function POST(request: Request) {
     : { left: 120, right: 120, bottom: 100, maxWidth: draft.template === "clean" ? 1400 : 1560, justifyContent: "flex-end" as const };
 
   return new ImageResponse(
-    <div style={{ display: "flex", width: "100%", height: "100%", position: "relative", overflow: "hidden", backgroundColor: "#111", color: draft.textColor, fontFamily: "ThumbnailFont" }}>
+    <div style={{ display: "flex", width: "100%", height: "100%", position: "relative", overflow: "hidden", backgroundColor: "#111", color: draft.textColor, fontFamily: `ThumbnailFont-${draft.fontStyle}` }}>
       {/* ImageResponse renders HTML-compatible elements rather than next/image. */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img src={imageUrl} alt="" width="1920" height="1080" style={{ position: "absolute", zIndex: 0, width: "100%", height: "100%", objectFit: "cover", transform: `scale(${draft.imageZoom})` }} />
       <div style={{ display: "flex", position: "absolute", zIndex: 1, inset: 0, background: overlay }} />
       <ThumbnailDecoration draft={draft} />
       <ThumbnailFrame draft={draft} />
-      <div style={{ display: "flex", flexDirection: "column", position: "absolute", zIndex: 4, ...copyPosition }}>
-        <div style={{ display: "flex", alignSelf: "flex-start", background: draft.accent, color: "#151515", padding: "10px 20px", fontSize: 30, fontWeight: 800 }}>{draft.episode || "NEW"}</div>
-        <div style={{ display: "flex", marginTop: 22, fontSize: draft.titleSize, lineHeight: draft.template === "documentary" ? 1.08 : 1.04, fontWeight: fontWeights[draft.fontStyle], wordBreak: "keep-all", textShadow: "0 5px 22px rgba(0,0,0,.38)" }}>{draft.title}</div>
-        {draft.decoration === "underline" && <div style={{ display: "flex", width: 320, height: 9, marginTop: 24, background: draft.accent }} />}
-        {draft.subtitle && <div style={{ display: "flex", marginTop: 20, fontSize: draft.subtitleSize, lineHeight: 1.25, fontWeight: 650, color: draft.textColor, opacity: 0.86, textShadow: "0 4px 16px rgba(0,0,0,.42)" }}>{draft.subtitle}</div>}
-      </div>
+      {draft.thumbnailElements?.length ? draft.thumbnailElements.map((element) => renderThumbnailElement(element, request)) : (
+        <div style={{ display: "flex", flexDirection: "column", position: "absolute", zIndex: 4, ...copyPosition }}>
+          <div style={{ display: "flex", alignSelf: "flex-start", background: draft.accent, color: "#151515", padding: "10px 20px", fontSize: 30, fontWeight: 800 }}>{draft.episode || "NEW"}</div>
+          <div style={{ display: "flex", marginTop: 22, fontSize: draft.titleSize, lineHeight: draft.template === "documentary" ? 1.08 : 1.04, fontWeight: fontWeights[draft.fontStyle], wordBreak: "keep-all", textShadow: "0 5px 22px rgba(0,0,0,.38)" }}>{draft.title}</div>
+          {draft.decoration === "underline" && <div style={{ display: "flex", width: 320, height: 9, marginTop: 24, background: draft.accent }} />}
+          {draft.subtitle && <div style={{ display: "flex", marginTop: 20, fontSize: draft.subtitleSize, lineHeight: 1.25, fontWeight: 650, color: draft.textColor, opacity: 0.86, textShadow: "0 4px 16px rgba(0,0,0,.42)" }}>{draft.subtitle}</div>}
+        </div>
+      )}
     </div>,
     {
       width: 1920,
       height: 1080,
-      fonts: [
-        { name: "ThumbnailFont", data: fontData, weight: fontWeights[draft.fontStyle] },
-      ],
+      fonts: loadedFonts.map(({ style, data }) => ({ name: `ThumbnailFont-${style}`, data, weight: fontWeights[style] })),
     },
   );
 }

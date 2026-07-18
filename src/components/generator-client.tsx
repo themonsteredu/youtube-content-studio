@@ -1,15 +1,13 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Player } from "@remotion/player";
-import { Download, Film, Image as ImageIcon, LoaderCircle, Sparkles, Square, Type } from "lucide-react";
+import { Download, LoaderCircle, Sparkles, Square, Type } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
+import { createDefaultThumbnailElements, ThumbnailLayoutEditor } from "@/components/thumbnail-layout-editor";
 import { listLocalAssets, mergeAssets } from "@/lib/local-media";
-import { IntroComposition } from "@/remotion/intro-composition";
-import { ThumbnailPreview } from "@/components/thumbnail-preview";
-import type { ContentDraft, MediaAsset } from "@/types/studio";
+import type { ContentDraft, MediaAsset, ThumbnailElement } from "@/types/studio";
 
 const schema = z.object({
   title: z.string().min(2, "제목을 두 글자 이상 입력하세요.").max(60, "제목은 60자 이내로 입력하세요."),
@@ -42,13 +40,14 @@ const templatePresets: Record<ContentDraft["template"], Partial<ContentDraft>> =
 export function GeneratorClient({ assets }: { assets: MediaAsset[] }) {
   const [availableAssets, setAvailableAssets] = useState(assets);
   const first = availableAssets[0];
-  const [tab, setTab] = useState<"thumbnail" | "intro">("thumbnail");
-  const [busy, setBusy] = useState<"png" | "mp4" | null>(null);
+  const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const initialDraft: ContentDraft = { title: "AI 시대, 아이에게 정말 필요한 공부", subtitle: "별거 다하는 원장님의 교육 실험", episode: "EP. 12", imageUrl: first?.url ?? "", imageId: first?.id, template: "bold", accent: "#f2c94c", textColor: "#ffffff", fontStyle: "strong", titleSize: 104, subtitleSize: 34, frameStyle: "corners", frameColor: "#ffffff", frameWidth: 8, frameInset: 48, decoration: "underline", overlayOpacity: 0.7, imageZoom: 1.04, duration: 6 };
   const { register, control, setValue, handleSubmit, formState: { errors } } = useForm<ContentDraft>({
     resolver: zodResolver(schema),
-    defaultValues: { title: "AI 시대, 아이에게 정말 필요한 공부", subtitle: "별거 다하는 원장님의 교육 실험", episode: "EP. 12", imageUrl: first?.url ?? "", imageId: first?.id, template: "bold", accent: "#f2c94c", textColor: "#ffffff", fontStyle: "strong", titleSize: 104, subtitleSize: 34, frameStyle: "corners", frameColor: "#ffffff", frameWidth: 8, frameInset: 48, decoration: "underline", overlayOpacity: 0.7, imageZoom: 1.04, duration: 6 },
+    defaultValues: initialDraft,
   });
+  const [thumbnailElements, setThumbnailElements] = useState<ThumbnailElement[]>(() => createDefaultThumbnailElements(initialDraft));
   const watched = useWatch({ control });
   const values: ContentDraft = {
     title: watched.title ?? "",
@@ -71,12 +70,35 @@ export function GeneratorClient({ assets }: { assets: MediaAsset[] }) {
     imageZoom: watched.imageZoom ?? 1.04,
     duration: watched.duration ?? 6,
   };
-  const frames = Math.round((values.duration || 6) * 30);
+  const resolvedThumbnailElements = thumbnailElements.map((element) => {
+    if (element.role === "title") return { ...element, text: values.title, color: values.textColor, fontStyle: values.fontStyle, fontSize: values.titleSize, fontWeight: undefined };
+    if (element.role === "subtitle") return { ...element, text: values.subtitle, color: values.textColor, fontStyle: values.fontStyle, fontSize: values.subtitleSize, fontWeight: undefined };
+    if (element.role === "episode") return { ...element, text: values.episode || "NEW", backgroundColor: values.accent, fontStyle: values.fontStyle, fontWeight: undefined };
+    return element;
+  });
 
   const applyTemplate = (template: ContentDraft["template"]) => {
     setValue("template", template);
     Object.entries(templatePresets[template]).forEach(([key, value]) => setValue(key as keyof ContentDraft, value as never));
+    const presetDraft = { ...values, ...templatePresets[template], template } as ContentDraft;
+    const customElements = thumbnailElements.filter((element) => element.role === "custom");
+    setThumbnailElements([...createDefaultThumbnailElements(presetDraft), ...customElements]);
   };
+
+  function handleLayoutChange(next: ThumbnailElement[]) {
+    setThumbnailElements(next);
+    const title = next.find((element) => element.role === "title");
+    const subtitle = next.find((element) => element.role === "subtitle");
+    const episode = next.find((element) => element.role === "episode");
+    if (title?.text !== undefined && title.text !== values.title) setValue("title", title.text);
+    if (title?.color && title.color !== values.textColor) setValue("textColor", title.color);
+    if (title?.fontStyle && title.fontStyle !== values.fontStyle) setValue("fontStyle", title.fontStyle);
+    if (title?.fontSize && title.fontSize !== values.titleSize) setValue("titleSize", title.fontSize);
+    if (subtitle?.text !== undefined && subtitle.text !== values.subtitle) setValue("subtitle", subtitle.text);
+    if (subtitle?.fontSize && subtitle.fontSize !== values.subtitleSize) setValue("subtitleSize", subtitle.fontSize);
+    if (episode?.text !== undefined && episode.text !== values.episode) setValue("episode", episode.text);
+    if (episode?.backgroundColor && episode.backgroundColor !== values.accent) setValue("accent", episode.backgroundColor);
+  }
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
@@ -88,26 +110,19 @@ export function GeneratorClient({ assets }: { assets: MediaAsset[] }) {
   }, []);
 
   const downloadPng = handleSubmit(async (draft) => {
-    setBusy("png"); setMessage("");
-    const response = await fetch("/api/thumbnail", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(draft) });
-    if (!response.ok) { setMessage("PNG 생성에 실패했습니다."); setBusy(null); return; }
+    setBusy(true); setMessage("");
+    const response = await fetch("/api/thumbnail", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...draft, thumbnailElements: resolvedThumbnailElements }) });
+    if (!response.ok) { setMessage("PNG 생성에 실패했습니다."); setBusy(false); return; }
     const blob = await response.blob();
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a"); anchor.href = url; anchor.download = "youtube-thumbnail.png"; anchor.click();
-    URL.revokeObjectURL(url); setBusy(null); setMessage("PNG 파일을 생성했습니다.");
-  });
-
-  const submitMp4 = handleSubmit(async (draft) => {
-    setBusy("mp4"); setMessage("");
-    const response = await fetch("/api/render", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...draft, kind: "intro" }) });
-    const payload = await response.json();
-    setBusy(null); setMessage(response.ok ? `렌더 작업을 등록했습니다. (${payload.jobId})` : payload.error ?? "작업 등록에 실패했습니다.");
+    URL.revokeObjectURL(url); setBusy(false); setMessage("PNG 파일을 생성했습니다.");
   });
 
   return (
     <div className="generator-grid">
       <section className="panel">
-        <div className="panel-head"><h3>콘텐츠 설정</h3><span className="chip">자동 저장 준비</span></div>
+        <div className="panel-head"><h3>콘텐츠 설정</h3><span className="chip">자유 배치</span></div>
         <div className="panel-body">
           <div className="notice">입력 내용은 오른쪽 미리보기에 즉시 반영됩니다.</div>
           <div className="field"><label className="label">메인 제목</label><textarea className="textarea" {...register("title")} />{errors.title && <p className="form-error">{errors.title.message}</p>}</div>
@@ -148,15 +163,8 @@ export function GeneratorClient({ assets }: { assets: MediaAsset[] }) {
             <div className="field"><label className="label range-label">사진 확대 <output>{Math.round(values.imageZoom * 100)}%</output></label><input className="range" type="range" min="1" max="1.3" step="0.01" {...register("imageZoom", { valueAsNumber: true })} /></div>
           </div>
 
-          <div className="design-section">
-            <h4 className="design-heading"><Film size={15} /> 영상 설정</h4>
-          <div className="field-row">
-            <div className="field"><label className="label">인트로 길이 · {values.duration}초</label><input className="range" type="range" min="3" max="12" step="1" {...register("duration", { valueAsNumber: true })} /></div>
-          </div>
-          </div>
           <div style={{ display: "flex", gap: 9, flexWrap: "wrap" }}>
-            <button className="button" disabled={Boolean(busy)} onClick={downloadPng}>{busy === "png" ? <LoaderCircle size={15} /> : <Download size={15} />} PNG 생성</button>
-            <button className="button secondary" disabled={Boolean(busy)} onClick={submitMp4}>{busy === "mp4" ? <LoaderCircle size={15} /> : <Film size={15} />} MP4 렌더</button>
+            <button className="button" disabled={busy} onClick={downloadPng}>{busy ? <LoaderCircle className="spin" size={15} /> : <Download size={15} />} PNG 생성</button>
           </div>
           {message && <p style={{ fontSize: 12, color: "#176b62", marginBottom: 0 }}>{message}</p>}
         </div>
@@ -164,10 +172,10 @@ export function GeneratorClient({ assets }: { assets: MediaAsset[] }) {
 
       <section className="preview-stack">
         <div className="panel">
-          <div className="panel-head"><h3>실시간 미리보기</h3><div><button className={`button ${tab === "thumbnail" ? "" : "secondary"}`} onClick={() => setTab("thumbnail")}><ImageIcon size={14} /> 썸네일</button> <button className={`button ${tab === "intro" ? "" : "secondary"}`} onClick={() => setTab("intro")}><Film size={14} /> 인트로</button></div></div>
+          <div className="panel-head"><h3>실시간 미리보기</h3><span className="chip">자유 배치 캔버스</span></div>
           <div className="panel-body">
-            {tab === "thumbnail" ? <ThumbnailPreview draft={values} /> : <Player component={IntroComposition} inputProps={values} durationInFrames={frames} compositionWidth={1920} compositionHeight={1080} fps={30} controls loop style={{ width: "100%", aspectRatio: "16 / 9", borderRadius: 6, overflow: "hidden" }} />}
-            <div className="meta-row"><span className="chip">1920 × 1080</span><span className="chip">16:9</span><span className="chip">{tab === "thumbnail" ? "PNG" : `${values.duration}초 · 30fps`}</span></div>
+            <ThumbnailLayoutEditor draft={values} elements={resolvedThumbnailElements} assets={availableAssets} onChange={handleLayoutChange} />
+            <div className="meta-row"><span className="chip">1920 × 1080</span><span className="chip">16:9</span><span className="chip">PNG</span></div>
           </div>
         </div>
       </section>

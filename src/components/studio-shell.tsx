@@ -2,13 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Clapperboard, Film, History, Images, NotebookPen, Settings, Sparkles } from "lucide-react";
+import { Clapperboard, History, Images, NotebookPen, Settings, Sparkles } from "lucide-react";
 
 const items = [
   { href: "/admin/youtube-planner", label: "AI 기획 보드", icon: NotebookPen },
   { href: "/admin/youtube-gallery", label: "이미지 갤러리", icon: Images },
-  { href: "/admin/youtube-generator", label: "콘텐츠 생성기", icon: Sparkles },
-  { href: "/admin/intro-editor", label: "인트로 편집기", icon: Film },
+  { href: "/admin/youtube-generator", label: "콘텐츠 스튜디오", icon: Sparkles },
   { href: "/admin/youtube-history", label: "생성 이력", icon: History },
 ];
 
